@@ -1,0 +1,22 @@
+{
+  "invalidUser": {
+    "email": "invalid_user@example.com",
+    "password": "WrongPassword123!"
+  },
+  "newUser": {
+    "name": "John Doe",
+    "job": "Test Engineer"
+  },
+  "users": [
+    {
+      "id": 1,
+      "email": "user1@organisation.nhs.uk",
+      "password": "Pass1Word!"
+    },
+    {
+      "id": 2,
+      "email": "user2@organisation.nhs.uk",
+      "password": "Pass2Word!"
+    }
+  ]
+}

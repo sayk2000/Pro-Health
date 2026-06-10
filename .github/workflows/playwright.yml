@@ -1,0 +1,129 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Nightly full regression at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag filter (e.g. @smoke, @regression, @critical)'
+        required: false
+        default: '@smoke'
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'qa'
+        type: choice
+        options: [qa, staging, prod]
+
+jobs:
+  test:
+    name: ${{ matrix.project }} / ${{ github.event.inputs.tag || (github.event_name == 'schedule' && '@regression') || '@smoke' }}
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox, webkit]
+
+    env:
+      ENVIRONMENT: ${{ github.event.inputs.environment || 'qa' }}
+      BASE_URL: ${{ secrets.BASE_URL }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      TEST_USER: ${{ secrets.TEST_USER }}
+      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      TAG_FILTER: ${{ github.event.inputs.tag || (github.event_name == 'schedule' && '@regression') || '@smoke' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps ${{ matrix.project }}
+
+      - name: Install Playwright system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps ${{ matrix.project }}
+
+      - name: Run Playwright tests
+        run: npx playwright test --project=${{ matrix.project }} --grep "$TAG_FILTER"
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-${{ matrix.project }}
+          path: reports/html-report/
+          retention-days: 14
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.project }}
+          path: reports/allure-results/
+          retention-days: 14
+
+      - name: Upload traces / videos / screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-artifacts-${{ matrix.project }}
+          path: reports/test-output/
+          retention-days: 14
+
+  publish-allure:
+    name: Aggregate Allure report
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download all allure-results artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: reports/allure-results-merged/
+          pattern: allure-results-*
+          merge-multiple: true
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline
+
+      - name: Generate Allure HTML report
+        run: allure generate reports/allure-results-merged -o reports/allure-report --clean
+
+      - name: Upload aggregated Allure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-aggregated
+          path: reports/allure-report/
+          retention-days: 30
