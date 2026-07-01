@@ -4,6 +4,15 @@ require('dotenv').config();
 
 const STORAGE_STATE = '.auth/user.json';
 
+// Run headed with maximized window by default; set HEADLESS=true for CI.
+const isHeadless = process.env.HEADLESS === 'true';
+
+// Strip viewport/scale properties from a device so viewport:null + --start-maximized work.
+const desktopChrome = (function () {
+  const { deviceScaleFactor, isMobile, hasTouch, viewport, ...rest } = devices['Desktop Chrome'];
+  return rest;
+})();
+
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 60_000,
@@ -35,23 +44,25 @@ module.exports = defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    headless: true,
+    headless: isHeadless,
+    viewport: null,
+    launchOptions: {
+      args: ['--start-maximized'],
+    },
     actionTimeout: 15_000,
     navigationTimeout: 60_000,
   },
 
   projects: [
-    // 1) Auth setup — runs once, produces storageState used by other projects
     {
       name: 'setup',
       testMatch: /.*\.setup\.js/,
     },
-
-    // 2) Browser projects — depend on setup, reuse the saved storage state
     {
       name: 'chromium',
       use: {
-        ...devices['Desktop Chrome'],
+        ...desktopChrome,
+        viewport: null,
         storageState: STORAGE_STATE,
       },
       dependencies: ['setup'],
@@ -72,14 +83,12 @@ module.exports = defineConfig({
       },
       dependencies: ['setup'],
     },
-
-    // 3) Project for tests that should NOT use the saved auth state
-    //    (e.g. login tests themselves, signup, password reset)
     {
       name: 'no-auth',
       testMatch: /.*\.noauth\.spec\.js/,
       use: {
-        ...devices['Desktop Chrome'],
+        ...desktopChrome,
+        viewport: null,
         storageState: { cookies: [], origins: [] },
       },
     },

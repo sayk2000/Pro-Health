@@ -36,41 +36,25 @@ class BasePage {
   // Navigation
   // ---------------------------------------------------------------------------
 
-  /**
-   * Navigate to a URL and wait for the chosen load state.
-   * @param {string} url
-   * @param {{ waitUntil?: 'load'|'domcontentloaded'|'networkidle' }} [options]
-   */
   async navigate(url, { waitUntil = 'domcontentloaded' } = {}) {
     this.logger.info(`Navigating to ${url}`);
     await this.page.goto(url, { waitUntil });
   }
 
-  async reload() {
-    await this.page.reload();
-  }
-
-  async goBack() {
-    await this.page.goBack();
-  }
+  async reload() { await this.page.reload(); }
+  async goBack()  { await this.page.goBack(); }
 
   async waitForLoadState(state = 'networkidle') {
     await this.page.waitForLoadState(state);
   }
 
-  async getTitle() {
-    return this.page.title();
-  }
-
-  async getUrl() {
-    return this.page.url();
-  }
+  async getTitle() { return this.page.title(); }
+  async getUrl()   { return this.page.url(); }
 
   // ---------------------------------------------------------------------------
   // Element waits
   // ---------------------------------------------------------------------------
 
-  /** Wait for an element to reach a given state (default: visible). */
   async waitForElement(target, { state = 'visible', timeout = 10_000 } = {}) {
     await this._toLocator(target).waitFor({ state, timeout });
   }
@@ -83,44 +67,27 @@ class BasePage {
   // Interactions
   // ---------------------------------------------------------------------------
 
-  /** Click an element after ensuring it is visible. */
   async click(target, { timeout = 10_000 } = {}) {
     const locator = this._toLocator(target);
     await locator.waitFor({ state: 'visible', timeout });
     await locator.click();
   }
 
-  /** Clear and type into a field. */
   async fill(target, value, { timeout = 10_000 } = {}) {
     const locator = this._toLocator(target);
     await locator.waitFor({ state: 'visible', timeout });
     await locator.fill(value);
   }
 
-  /** Type character-by-character (use when the field reacts to keypresses). */
   async type(target, value, { delay = 50 } = {}) {
     await this._toLocator(target).pressSequentially(value, { delay });
   }
 
-  async selectOption(target, value) {
-    await this._toLocator(target).selectOption(value);
-  }
-
-  async check(target) {
-    await this._toLocator(target).check();
-  }
-
-  async uncheck(target) {
-    await this._toLocator(target).uncheck();
-  }
-
-  async hover(target) {
-    await this._toLocator(target).hover();
-  }
-
-  async press(target, key) {
-    await this._toLocator(target).press(key);
-  }
+  async selectOption(target, value) { await this._toLocator(target).selectOption(value); }
+  async check(target)               { await this._toLocator(target).check(); }
+  async uncheck(target)             { await this._toLocator(target).uncheck(); }
+  async hover(target)               { await this._toLocator(target).hover(); }
+  async press(target, key)          { await this._toLocator(target).press(key); }
 
   async uploadFile(target, filePath) {
     await this._toLocator(target).setInputFiles(filePath);
@@ -134,31 +101,16 @@ class BasePage {
     return (await this._toLocator(target).textContent())?.trim() || '';
   }
 
-  async getInputValue(target) {
-    return this._toLocator(target).inputValue();
-  }
-
-  async getAttribute(target, name) {
-    return this._toLocator(target).getAttribute(name);
-  }
-
-  async isVisible(target) {
-    return this._toLocator(target).isVisible();
-  }
-
-  async isEnabled(target) {
-    return this._toLocator(target).isEnabled();
-  }
-
-  async count(target) {
-    return this._toLocator(target).count();
-  }
+  async getInputValue(target)         { return this._toLocator(target).inputValue(); }
+  async getAttribute(target, name)    { return this._toLocator(target).getAttribute(name); }
+  async isVisible(target)             { return this._toLocator(target).isVisible(); }
+  async isEnabled(target)             { return this._toLocator(target).isEnabled(); }
+  async count(target)                 { return this._toLocator(target).count(); }
 
   // ---------------------------------------------------------------------------
   // Utilities
   // ---------------------------------------------------------------------------
 
-  /** Take a screenshot into the reports output dir. */
   async screenshot(name) {
     const path = `reports/test-output/${name}-${Date.now()}.png`;
     await this.page.screenshot({ path, fullPage: true });
@@ -166,17 +118,81 @@ class BasePage {
     return path;
   }
 
-  /** Scroll an element into view. */
   async scrollIntoView(target) {
     await this._toLocator(target).scrollIntoViewIfNeeded();
   }
 
-  /**
-   * Wait for a specific network response matching a URL pattern.
-   * Useful for asserting an API call fired as a side effect of a UI action.
-   */
   async waitForResponse(urlPattern, { timeout = 15_000 } = {}) {
     return this.page.waitForResponse(urlPattern, { timeout });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Angular / SPA helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Dismiss the cookie / consent banner if present.
+   * Silently no-ops if the banner is not visible.
+   */
+  async dismissCookieBanner() {
+    try {
+      // ProHealth uses .cookie-toast with a "Got it" button.
+      // OneTrust selectors kept as fallback for other environments.
+      const banner = this.page.locator(
+        '.cookie-toast button, ' +
+        'button:has-text("Got it"), ' +
+        '#onetrust-accept-btn-handler, ' +
+        'button:has-text("Accept All"), ' +
+        'button:has-text("Accept all cookies"), ' +
+        'button:has-text("Accept Cookies"), ' +
+        '.cookie-banner button, ' +
+        '[class*="cookie"] button[class*="accept"], ' +
+        '[class*="consent"] button[class*="accept"]'
+      ).first();
+      await banner.waitFor({ state: 'visible', timeout: 4_000 });
+      await banner.click();
+      this.logger.info('Cookie banner dismissed');
+    } catch {
+      // Banner not present — expected in most tests
+    }
+  }
+
+  /**
+   * Fill an Angular reactive-form input correctly.
+   * Plain fill() bypasses Angular change detection; dispatching native
+   * input + change + blur events triggers validators and ngModel updates.
+   */
+  async fillAngularInput(target, value) {
+    const locator = this._toLocator(target);
+    await locator.waitFor({ state: 'visible', timeout: 10_000 });
+    await locator.fill(value);
+    await locator.dispatchEvent('input');
+    await locator.dispatchEvent('change');
+    await locator.dispatchEvent('blur');
+  }
+
+  /**
+   * Wait for Angular to finish pending async work.
+   * Uses domcontentloaded + a short settling delay.
+   */
+  async waitForAngular() {
+    await this.page.waitForLoadState('domcontentloaded');
+    await this.page.waitForTimeout(300);
+  }
+
+  /**
+   * Wait for a p-toast success message to appear and return its text.
+   * @param {number} [timeout=10000]
+   * @returns {Promise<string>}
+   */
+  async waitForSuccessToast(timeout = 10_000) {
+    const toast = this.page
+      .locator('p-toast .p-toast-message.p-toast-message-success, p-toast .p-message-success')
+      .first();
+    await toast.waitFor({ state: 'visible', timeout });
+    const text = (await toast.textContent())?.trim() || '';
+    this.logger.info(`Toast: ${text}`);
+    return text;
   }
 }
 

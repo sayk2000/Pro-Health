@@ -38,8 +38,8 @@ const config = {
   loginUrl: `${baseUrl}${paths.login}`,
   homeUrl: `${baseUrl}${paths.home}`,
   credentials: {
-    email: process.env.TEST_EMAIL || 'systemadmin@blueberrysystems.co.uk',
-    password: process.env.TEST_PASSWORD || '',
+    email: process.env.TEST_EMAIL || 'skharwade@delaplex.com',
+    password: process.env.TEST_PASSWORD || 'Admin#12345',
   },
 };
 

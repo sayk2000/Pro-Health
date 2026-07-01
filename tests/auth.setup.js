@@ -18,7 +18,9 @@ setup('authenticate and save storage state', async ({ page }) => {
   // Navigate via the root URL: it redirects to /account/login?redirectStr=%2Fapp,
   // which both loads reliably and ensures a successful login lands on /app.
   const loginPage = new LoginPage(page);
-  await loginPage.open(config.baseUrl);
+  await page.goto(config.baseUrl, { waitUntil: 'commit', timeout: 60_000 });
+  await loginPage.dismissCookieBanner();
+  await loginPage.waitForElement(loginPage.emailInput, { timeout: 45_000 });
   await loginPage.login(config.credentials.email, config.credentials.password);
 
   // Successful login lands on the ProHealth app home (/app).

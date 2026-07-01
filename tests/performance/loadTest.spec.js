@@ -1,19 +1,23 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('../../fixtures/base.fixture');
 const config = require('../../config/env.config');
 const logger = require('../../utils/logger');
 
 test.describe('Performance / Load', { tag: '@performance' }, () => {
+  test.beforeEach(async ({ page, prepareAuthenticatedPage }) => {
+    await prepareAuthenticatedPage(page);
+  });
+
   test('home page loads within performance budget', { tag: ['@smoke', '@performance'] }, async ({ page }) => {
     const budgetMs = 5000;
     const start = Date.now();
-    await page.goto(config.baseUrl, { waitUntil: 'load' });
+    await page.goto(config.homeUrl, { waitUntil: 'load' });
     const elapsed = Date.now() - start;
     logger.info(`Home page load: ${elapsed}ms (budget ${budgetMs}ms)`);
     expect(elapsed).toBeLessThan(budgetMs);
   });
 
   test('navigation timing API metrics', { tag: '@regression' }, async ({ page }) => {
-    await page.goto(config.baseUrl);
+    await page.goto(config.homeUrl);
     const timing = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
       if (!nav) return null;
@@ -28,21 +32,22 @@ test.describe('Performance / Load', { tag: '@performance' }, () => {
     expect(timing.domContentLoaded).toBeLessThan(8000);
   });
 
-  test('concurrent page loads simulate basic load', { tag: '@performance' }, async ({ browser }) => {
+  test('concurrent page loads simulate basic load', { tag: '@performance' }, async ({ browser, newAuthenticatedPage }) => {
     const concurrency = 5;
     const results = [];
 
     const tasks = Array.from({ length: concurrency }, async (_, i) => {
-      const context = await browser.newContext();
-      const page = await context.newPage();
+      const { context, page } = await newAuthenticatedPage(browser);
       const start = Date.now();
       try {
-        await page.goto(config.baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.goto(config.homeUrl, { waitUntil: 'domcontentloaded' });
         results.push({ id: i, ok: true, durationMs: Date.now() - start });
       } catch (err) {
         results.push({ id: i, ok: false, error: err.message });
       } finally {
-        await context.close();
+        if (config.closeBrowser) {
+          await context.close();
+        }
       }
     });
 
